@@ -1,5 +1,10 @@
 // Cozy Cookbook — Service Worker
-const CACHE = 'cozy-cookbook-v2';
+// CACHE bumped v2 → v3 after data fixes (dedup + ID collision fix). Returning
+// users on stale v2 cached data.js were seeing inflated recipe counts and
+// duplicate titles in Browse because the v2 cache didn't include the cleaned
+// data.js. Also bumped index.html script src to data.js?v=3 to bypass the
+// browser cache entirely.
+const CACHE = 'cozy-cookbook-v3';
 const ASSETS = [
   './',
   './index.html',
