@@ -503,6 +503,11 @@ function recipeCardCompact(r) {
 
 // === SCREEN: RECIPE DETAIL ===
 function openRecipe(id) {
+  if (!id) {
+    console.warn('openRecipe called without an id');
+    showToast('That recipe could not be opened');
+    return;
+  }
   state.selectedRecipe = id;
   state.contextReturnMode = state.mode;
   setMode('recipe');
@@ -511,10 +516,20 @@ function openRecipe(id) {
 function renderRecipe() {
   var r = window.RECIPES.find(function(x) { return x.id === state.selectedRecipe; });
   if (!r) {
+    // Defensive: a stale id (e.g. from a cached favorites list referencing a
+    // recipe that was renamed or removed) should not leave the user stranded
+    // on a screen with a single thinking-face emoji.
+    console.warn('Recipe not found in RECIPES:', state.selectedRecipe);
     return el('div', { class: 'screen' }, [
       el('div', { class: 'empty' }, [
-        el('div', { class: 'empty-emoji' }, '🤔'),
-        el('h3', {}, 'Recipe not found')
+        el('div', { class: 'empty-emoji' }, '🍳'),
+        el('h3', {}, 'Recipe not found'),
+        el('p', {}, 'This recipe may have been removed in a recent update, or your saved version is out of date.'),
+        el('button', {
+          class: 'btn btn-primary',
+          style: { marginTop: '16px' },
+          onclick: function() { setMode('browse'); }
+        }, '← Back to Browse')
       ])
     ]);
   }
@@ -651,6 +666,8 @@ function startCooking(r) {
 function renderCook() {
   var r = window.RECIPES.find(function(x) { return x.id === state.cook.recipeId; });
   if (!r) {
+    console.warn('Cook session references missing recipe:', state.cook.recipeId);
+    showToast('That recipe is no longer available');
     state.cook = null;
     setMode('home');
     return el('div', {});
