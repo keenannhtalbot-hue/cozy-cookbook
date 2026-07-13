@@ -51,6 +51,96 @@ function load(key, def) {
   } catch(e) { return def; }
 }
 
+function loadProfileStore(key, legacyKey, fallback) {
+  var stored = load(key, null);
+  if (stored && typeof stored === 'object' && !Array.isArray(stored) && Object.keys(stored).length) {
+    return stored;
+  }
+
+  var legacy = load(legacyKey, null);
+  if (legacy == null) return fallback;
+  if (Array.isArray(legacy)) return { p1: legacy };
+  if (legacy && typeof legacy === 'object') {
+    // Preserve an already profile-shaped legacy object.
+    if (Object.keys(legacy).some(function(id) { return /^p\d+$/.test(id); })) return legacy;
+    // Older meal plans were flat slot -> recipe maps.
+    return { p1: legacy };
+  }
+  return fallback;
+}
+
+// === DATA NORMALIZATION ===
+// The cookbook data contains both object ingredients and compact tuple
+// ingredients, plus a few sparse/duplicate entries from the data generator.
+// Normalize once at the boundary so every screen can rely on one safe shape.
+function slugify(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'variant';
+}
+
+function normalizeIngredient(ingredient) {
+  if (Array.isArray(ingredient)) {
+    return {
+      name: ingredient[0] == null ? '' : String(ingredient[0]),
+      qty: ingredient[1] == null ? null : ingredient[1],
+      unit: ingredient[2] == null ? '' : String(ingredient[2])
+    };
+  }
+  if (ingredient && typeof ingredient === 'object') {
+    return {
+      name: ingredient.name == null ? '' : String(ingredient.name),
+      qty: ingredient.qty == null ? null : ingredient.qty,
+      unit: ingredient.unit == null ? '' : String(ingredient.unit)
+    };
+  }
+  return { name: ingredient == null ? '' : String(ingredient), qty: null, unit: '' };
+}
+
+function normalizeRecipes(rawRecipes) {
+  var usedIds = Object.create(null);
+  var seenRecipes = Object.create(null);
+  var normalized = [];
+
+  (Array.isArray(rawRecipes) ? rawRecipes : []).forEach(function(recipe) {
+    if (!recipe || typeof recipe !== 'object') return;
+
+    var item = Object.assign({}, recipe);
+    item.ingredients = (Array.isArray(recipe.ingredients) ? recipe.ingredients : [])
+      .map(normalizeIngredient);
+    item.steps = Array.isArray(recipe.steps) ? recipe.steps.slice() : [];
+    item.tags = Array.isArray(recipe.tags) ? recipe.tags.slice() : [];
+
+    var baseId = String(item.id || 'recipe-' + (normalized.length + 1));
+    var fingerprint = JSON.stringify([
+      item.name, item.cuisine, item.level, item.time, item.servings,
+      item.ingredients, item.steps, item.nutrition, item.tags
+    ]);
+
+    // Drop exact duplicates, but preserve genuinely different recipes that
+    // unfortunately share an old ID by assigning a stable variant ID.
+    var recipeKey = baseId + '|' + fingerprint;
+    if (seenRecipes[recipeKey]) return;
+    seenRecipes[recipeKey] = true;
+
+    var id = baseId;
+    if (usedIds[id]) {
+      var suffix = slugify(item.name);
+      id = baseId + '-' + suffix;
+      var n = 2;
+      while (usedIds[id]) id = baseId + '-' + suffix + '-' + n++;
+    }
+    item.id = id;
+    usedIds[id] = true;
+    normalized.push(item);
+  });
+
+  return normalized;
+}
+
+window.RECIPES = normalizeRecipes(window.RECIPES);
+
 // === STATE ===
 var state = {
   mode: 'home', // home, browse, recipe, planner, shopping, favorites, search, cook
@@ -60,9 +150,12 @@ var state = {
   ]),
   activeProfile: load('activeProfile', 'p1'),
   history: load('history', []),
-  favorites: load('favorites', []), // per profile
-  mealPlan: load('mealPlan', {}),    // { 'p1': { 'mon-breakfast': recipeId, ... } }
-  shopping: load('shopping', []),    // per profile
+  favorites: load('favorites', []), // legacy storage key
+  favoritesByProfile: loadProfileStore('favoritesByProfile', 'favorites', {}),
+  mealPlan: load('mealPlan', {}),    // legacy storage key
+  mealPlanByProfile: loadProfileStore('mealPlanByProfile', 'mealPlan', {}),
+  shopping: load('shopping', []),    // legacy storage key
+  shoppingByProfile: loadProfileStore('shoppingByProfile', 'shopping', {}),
   filter: {
     cuisine: null,
     level: null,
@@ -84,8 +177,11 @@ function saveAll() {
   save('activeProfile', state.activeProfile);
   save('history', state.history);
   save('favorites', state.favorites);
+  save('favoritesByProfile', state.favoritesByProfile);
   save('mealPlan', state.mealPlan);
+  save('mealPlanByProfile', state.mealPlanByProfile);
   save('shopping', state.shopping);
+  save('shoppingByProfile', state.shoppingByProfile);
 }
 function profileData(key) {
   // per-profile data lives under {profileId: {...}}
@@ -352,7 +448,7 @@ function filterRecipes() {
     // Search query
     if (q) {
       var inName = r.name.toLowerCase().indexOf(q) >= 0;
-      var inCuisine = (window.CUISINES.find(function(c){return c.id===r.cuisine;}) || {}).name.toLowerCase().indexOf(q) >= 0;
+      var inCuisine = (window.CUISINES.find(function(c){return c.id===r.cuisine;}) || { name: '' }).name.toLowerCase().indexOf(q) >= 0;
       var inIng = r.ingredients.some(function(i) { return i.name.toLowerCase().indexOf(q) >= 0; });
       var inTag = (r.tags || []).some(function(t) { return t.toLowerCase().indexOf(q) >= 0; });
       if (!inName && !inCuisine && !inIng && !inTag) return false;
@@ -571,7 +667,7 @@ function renderCook() {
         el('button', {
           class: 'icon-btn',
           onclick: function() {
-            if (state.cook.timer) clearTimeout(state.cook.timer);
+            if (state.cook.timer) clearInterval(state.cook.timer);
             state.cook = null;
             setMode(state.contextReturnMode || 'home');
           },
@@ -649,16 +745,18 @@ function renderCook() {
 }
 
 function stepHasTime(step) {
-  return /\d+\s*(min|minute|hour|sec|second)/i.test(step);
+  return /\d+(?:\.\d+)?\s*(min(?:ute)?s?|hours?|hrs?|seconds?|secs?)/i.test(step);
 }
 
 function extractTimeMinutes(step) {
-  var m = step.match(/(\d+)\s*(?:min|minute)/i);
-  if (m) return parseInt(m[1]);
-  var h = step.match(/(\d+)\s*(?:hour|hr)/i);
-  if (h) return parseInt(h[1]) * 60;
-  var s = step.match(/(\d+)\s*(?:sec|second)/i);
-  if (s) return Math.max(1, Math.ceil(parseInt(s) / 60));
+  var hourMatch = step.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)/i);
+  var minuteMatch = step.match(/(\d+(?:\.\d+)?)\s*(?:minutes?|mins?)/i);
+  var secondMatch = step.match(/(\d+(?:\.\d+)?)\s*(?:seconds?|secs?)/i);
+  var minutes = 0;
+  if (hourMatch) minutes += parseFloat(hourMatch[1]) * 60;
+  if (minuteMatch) minutes += parseFloat(minuteMatch[1]);
+  if (secondMatch) minutes += parseFloat(secondMatch[1]) / 60;
+  if (minutes > 0) return Math.max(1, Math.ceil(minutes));
   return 5;
 }
 
@@ -791,6 +889,7 @@ function renderPlanner() {
   if (!state.mealPlanByProfile) state.mealPlanByProfile = {};
   if (!state.mealPlanByProfile[profile.id]) state.mealPlanByProfile[profile.id] = {};
   var plan = state.mealPlanByProfile[profile.id];
+  var selectedDay = state.selectedDay;
 
   return el('div', { class: 'screen' }, [
     el('div', { class: 'page-title' }, 'Meal Plan'),
@@ -807,7 +906,7 @@ function renderPlanner() {
 
     el('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } },
       SLOTS.map(function(slot) {
-        var recipeId = plan[d + '-' + slot];
+        var recipeId = plan[selectedDay + '-' + slot];
         var r = recipeId ? window.RECIPES.find(function(x) { return x.id === recipeId; }) : null;
         return el('div', { class: 'card' }, [
           el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: r ? '12px' : '0' } }, [
@@ -818,7 +917,7 @@ function renderPlanner() {
             ]),
             r ? el('button', {
               class: 'btn btn-ghost',
-              onclick: function() { delete plan[d + '-' + slot]; save('mealPlanByProfile', state.mealPlanByProfile); render(); }
+              onclick: function() { delete plan[selectedDay + '-' + slot]; save('mealPlanByProfile', state.mealPlanByProfile); render(); }
             }, '✕') : null
           ]),
           r ? el('div', {
@@ -834,7 +933,7 @@ function renderPlanner() {
             class: 'btn btn-secondary',
             style: { width: '100%' },
             onclick: function() {
-              state.contextRecipe = { day: d, slot: slot };
+              state.contextRecipe = { day: selectedDay, slot: slot };
               setMode('recipe-picker');
             }
           }, '+ Pick recipe')

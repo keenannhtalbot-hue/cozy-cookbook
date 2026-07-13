@@ -1,5 +1,5 @@
 // Cozy Cookbook — Service Worker
-const CACHE = 'cozy-cookbook-v1';
+const CACHE = 'cozy-cookbook-v2';
 const ASSETS = [
   './',
   './index.html',
