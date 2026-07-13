@@ -1,7 +1,7 @@
 {
-  "name": "Cozy Cookbook — 1000+ Recipes Worldwide",
+  "name": "Cozy Cookbook — 1008 Recipes Worldwide",
   "short_name": "Cozy Cookbook",
-  "description": "1000+ recipes from 15+ cuisines with 5 skill levels. Offline-ready PWA.",
+  "description": "1008 recipes from 24 cuisines with 5 skill levels. Offline-ready PWA.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
