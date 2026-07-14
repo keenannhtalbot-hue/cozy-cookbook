@@ -29,8 +29,22 @@ function el(tag, attrs, children) {
   }
   if (children !== undefined) {
     if (!Array.isArray(children)) children = [children];
+    // Flatten nested arrays recursively (from .map() results, ternaries, etc.)
+    function flatten(arr) {
+      var out = [];
+      arr.forEach(function(c) {
+        if (c == null || c === false) return;
+        if (Array.isArray(c)) {
+          // Recursively flatten
+          flatten(c).forEach(function(x) { out.push(x); });
+        } else {
+          out.push(c);
+        }
+      });
+      return out;
+    }
+    children = flatten(children);
     children.forEach(function(c) {
-      if (c == null || c === false) return;
       if (typeof c === 'string' || typeof c === 'number') {
         node.appendChild(document.createTextNode(String(c)));
       } else {
@@ -463,12 +477,56 @@ function recipeCard(r) {
   var cuisine = window.CUISINES.find(function(c) { return c.id === r.cuisine; }) || { name: r.cuisine, emoji: '🍽' };
   var level = window.LEVELS[r.level] || { name: r.level, emoji: '' };
 
+  // Detect dietary tags from ingredients (no API data — derive on the fly)
+  var allIngNames = (r.ingredients || []).map(function(i) { return i.name.toLowerCase(); }).join(' ');
+  var isVegetarian = !/(chicken|beef|pork|lamb|bacon|ham|sausage|turkey|fish|salmon|tuna|shrimp|crab|lobster|squid|octopus|mussel|clam|anchovy|sardine|duck|chorizo|pepperoni|salami|prosciutto|pancetta|guanciale|guanciale|bresaola)/.test(allIngNames);
+  var isVegan = isVegetarian && !/(egg|milk|butter|cheese|cream|yogurt|honey|parmesan|feta|mozzarella|ricotta|mascarpone|cheddar|gruyere|ghee)/.test(allIngNames);
+
+  // Detect keto (high fat, low carb): < 30g carbs and > 50% calories from fat
+  var n = r.nutrition || {};
+  var fatCal = (n.fat || 0) * 9;
+  var totalCal = n.calories || 1;
+  var isKeto = (n.carbs || 99) < 30 && (fatCal / totalCal) > 0.5;
+
+  // Detect spicy level: count chili-family ingredients + tags
+  var spicyHits = (allIngNames.match(/(chili|chile|chilli|jalape[ñn]o|habanero|serrano|cayenne|tabasco|sriracha|harissa|gochujang|gochugaru|wasabi|cayenne|chipotle|aji|cambodian|piri piri|bird.?s eye|scotch bonnet|thai chili|bang)/g) || []).length;
+  var spiceLevel = spicyHits >= 3 ? 3 : spicyHits >= 1 ? 2 : 0;
+  // Tag override
+  if ((r.tags || []).indexOf('extra-spicy') >= 0) spiceLevel = 3;
+  else if ((r.tags || []).indexOf('spicy') >= 0 && spiceLevel < 2) spiceLevel = 2;
+  var pepperIcons = spiceLevel > 0 ? '🌶'.repeat(spiceLevel) : '';
+
+  // Build diet badges
+  var dietBadges = [];
+  if (isVegan) dietBadges.push('🌱 Vegan');
+  else if (isVegetarian) dietBadges.push('🌿 Veg');
+  if (isKeto) dietBadges.push('K Keto');
+
+  // Build diet pill class set (auto-color via CSS based on text)
+  var dietPill = function(text) {
+    var cls = 'recipe-meta-pill';
+    if (text.indexOf('Vegan') >= 0) cls += ' vegan';
+    else if (text.indexOf('Veg') >= 0) cls += ' veg';
+    else if (text.indexOf('Keto') >= 0) cls += ' keto';
+    return el('span', { class: cls }, text);
+  };
+
   return el('div', {
     class: 'recipe-card',
     onclick: function() { openRecipe(r.id); }
   }, [
     el('div', { class: 'recipe-thumb' }, [
-      cuisine.emoji
+      cuisine.emoji,
+      dietBadges.length > 0
+        ? el('div', { class: 'thumb-badges' },
+            dietBadges.map(function(b) {
+              return el('span', { class: 'thumb-badge' }, b.split(' ')[0]);
+            })
+          )
+        : null,
+      pepperIcons
+        ? el('div', { class: 'thumb-spice' }, pepperIcons)
+        : null
     ]),
     el('div', { class: 'recipe-title' }, r.name),
     el('div', { class: 'recipe-meta' }, [
@@ -476,8 +534,10 @@ function recipeCard(r) {
       el('span', { class: 'recipe-meta-pill' }, '🍽 ' + r.servings)
     ]),
     el('div', { class: 'recipe-meta' }, [
-      el('span', { class: 'recipe-meta-pill veg' }, level.emoji + ' ' + level.name),
-      el('span', { class: 'recipe-meta-pill rose' }, cuisine.emoji + ' ' + cuisine.name)
+      el('span', { class: 'recipe-meta-pill level-pill' }, level.emoji + ' ' + level.name),
+      el('span', { class: 'recipe-meta-pill cuisine-pill' }, cuisine.emoji + ' ' + cuisine.name),
+      dietBadges.length > 0 ? dietPill(dietBadges.join(' · ')) : null,
+      pepperIcons ? el('span', { class: 'recipe-meta-pill spice-pill', title: 'Spicy level: ' + spiceLevel + '/3' }, pepperIcons) : null
     ])
   ]);
 }

@@ -305,9 +305,53 @@ h3 { font-size: 18px; font-weight: 600; }
   font-weight: 600;
   color: var(--ink-soft);
 }
+.recipe-meta-pill.veg { background: #d6e7c8; color: #4a6e2c; }
+.recipe-meta-pill.rose { background: #f4d9d9; color: #9a4848; }
+.recipe-meta-pill.level-pill { background: #efe2c2; color: #7a5b1c; }
+.recipe-meta-pill.cuisine-pill { background: #e3eaf0; color: #3a5e7e; }
+.recipe-meta-pill.vegan { background: #b9d68c; color: #2f5a14; border: 1.5px solid #4a7a23; }
+.recipe-meta-pill.veg-leaf { background: #c9dfa0; color: #406620; border: 1.5px solid #6b9742; }
+.recipe-meta-pill.keto { background: #fef3c7; color: #92400e; border: 1.5px solid #d97706; font-weight: 700; }
+.recipe-meta-pill.spice-pill { background: #fff1f0; color: #b91c1c; border: 1.5px solid #ef4444; font-weight: 700; padding: 2px 6px; letter-spacing: -0.5px; }
 
-.recipe-meta-pill.veg { background: rgba(168, 181, 160, 0.3); color: var(--sage-deep); }
-.recipe-meta-pill.rose { background: rgba(212, 165, 165, 0.3); color: var(--rose-deep); }
+.recipe-thumb {
+  position: relative;
+}
+.thumb-badges {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.thumb-badge {
+  display: inline-block;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.92);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+}
+.thumb-spice {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(255,255,255,0.92);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.18);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 14px;
+  letter-spacing: -1px;
+}
+
+
+
 .recipe-meta-pill.gold { background: rgba(201, 169, 97, 0.25); color: var(--gold); }
 
 /* === Buttons === */
