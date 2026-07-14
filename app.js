@@ -1329,15 +1329,28 @@ function setMode(m) {
 }
 
 function render() {
+  // Render the entire app. If anything throws, the global error handler will
+  // catch it and surface the error visibly. The local try/catch around the
+  // screen block keeps a partial page functional when only one screen fails.
   var root = $('#root');
-  if (!root) return;
-  root.innerHTML = '';
+  if (!root) {
+    // #root not in DOM yet — re-create it
+    root = document.createElement('div');
+    root.id = 'root';
+    document.body.appendChild(root);
+  }
+  try { root.innerHTML = ''; } catch(_){}
 
   var app = el('div', { class: 'app' });
-  app.appendChild(renderTopBar());
+
+  var topbar;
+  try { topbar = renderTopBar(); }
+  catch (e) { window.__renderErr = (window.__renderErr || []); window.__renderErr.push({step: 'topbar', msg: e.message, stack: e.stack}); topbar = document.createElement('div'); }
+
+  app.appendChild(topbar);
 
   var screenArea = el('div', { class: 'screen-area' });
-  var screen;
+  var screen = null;
   try {
     switch (state.mode) {
       case 'home': screen = renderHome(); break;
@@ -1354,21 +1367,41 @@ function render() {
       default: screen = renderHome();
     }
   } catch (e) {
-    console.error('Screen render failed:', e);
-    screen = el('div', { class: 'screen' }, [
-      el('div', { class: 'empty' }, [
-        el('div', { class: 'empty-emoji' }, '⚠️'),
-        el('h3', { class: 'script' }, 'Something went wrong'),
-        el('p', {}, e.message)
-      ])
-    ]);
+    window.__renderErr = (window.__renderErr || []);
+    window.__renderErr.push({step: 'screen-' + state.mode, msg: e.message, stack: e.stack});
+    var fb = document.createElement('div');
+    fb.className = 'screen';
+    var eb = document.createElement('div');
+    eb.className = 'empty';
+    var eicon = document.createElement('div');
+    eicon.className = 'empty-emoji';
+    eicon.textContent = '⚠️';
+    eb.appendChild(eicon);
+    var eh = document.createElement('h3');
+    eh.className = 'script';
+    eh.textContent = 'Something went wrong';
+    eb.appendChild(eh);
+    var ep = document.createElement('p');
+    ep.textContent = e.message;
+    eb.appendChild(ep);
+    fb.appendChild(eb);
+    screen = fb;
   }
+
   screenArea.appendChild(screen);
   app.appendChild(screenArea);
 
   if (state.mode !== 'cook') {
-    app.appendChild(renderBottomNav());
+    var bottomNav;
+    try { bottomNav = renderBottomNav(); }
+    catch (e) {
+      window.__renderErr = (window.__renderErr || []);
+      window.__renderErr.push({step: 'bottomnav', msg: e.message, stack: e.stack});
+      bottomNav = document.createElement('nav');
+    }
+    app.appendChild(bottomNav);
   }
+
   root.appendChild(app);
 }
 
