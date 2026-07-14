@@ -6,6 +6,29 @@
 (function() {
 'use strict';
 
+// === GLOBAL ERROR TRAP ===
+// Catch any uncaught error and surface it visibly so the app never silently fails.
+window.__bootErrors = [];
+window.addEventListener('error', function(ev) {
+  try {
+    var msg = (ev && ev.error && ev.error.message) || ev.message || 'Unknown error';
+    var src = (ev && ev.filename) || '?';
+    var line = (ev && ev.lineno) || 0;
+    window.__bootErrors.push({msg: msg, src: src, line: line, stack: (ev.error && ev.error.stack) || ''});
+    // If #root is empty, render a visible error
+    var root = document.getElementById('root');
+    if (root && (!root.innerHTML || root.innerHTML.length < 50)) {
+      root.innerHTML = '<div class="screen" style="padding:24px"><div class="empty"><div class="empty-emoji">⚠️</div><h3 class="script">Uncaught error</h3><p style="font-family:monospace;font-size:12px;white-space:pre-wrap">' + msg + '\n\n' + (ev.error && ev.error.stack || '').substring(0, 800) + '</p></div></div>';
+    }
+  } catch(_){}
+});
+window.addEventListener('unhandledrejection', function(ev) {
+  try {
+    var reason = ev.reason || 'unknown';
+    window.__bootErrors.push({msg: 'Promise: ' + (reason.message || reason), stack: reason.stack || ''});
+  } catch(_){}
+});
+
 // === HELPERS ===
 function $(sel) { return document.querySelector(sel); }
 function $$(sel) { return Array.from(document.querySelectorAll(sel)); }
